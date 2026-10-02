@@ -15,23 +15,26 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('JWT_SECRET') || 'super-secret-key',
+      secretOrKey:
+        configService.get<string>('JWT_SECRET') || 'super-secret-key',
       passReqToCallback: true,
     });
   }
 
   async validate(req: any, payload: any) {
     const token = req.headers.authorization.split(' ')[1];
-    
+
     const isBlacklisted = await this.redisClient.get(`bl_${token}`);
     if (isBlacklisted) {
-      throw new UnauthorizedException('Token đã bị thu hồi. Vui lòng đăng nhập lại.');
+      throw new UnauthorizedException(
+        'Token đã bị thu hồi. Vui lòng đăng nhập lại.',
+      );
     }
 
     const user = await this.usersService.findByEmail(payload.email);
     if (!user) throw new UnauthorizedException('User không tồn tại');
-    
+
     const { password, ...userWithoutPassword } = user;
-    return userWithoutPassword; 
+    return userWithoutPassword;
   }
 }

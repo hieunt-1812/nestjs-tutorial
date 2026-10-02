@@ -12,7 +12,7 @@ export class UsersService {
     private readonly usersRepository: Repository<User>,
   ) {}
 
-  async create(createUserDto: CreateUserDto): Promise<User> {
+  async create(createUserDto: CreateUserDto) {
     const { username, email, password } = createUserDto;
 
     const existingUser = await this.usersRepository.findOne({
@@ -25,14 +25,17 @@ export class UsersService {
 
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
-
     const newUser = this.usersRepository.create({
       username,
       email,
       password: hashedPassword,
     });
 
-    return this.usersRepository.save(newUser);
+    const savedUser = await this.usersRepository.save(newUser);
+
+    const { password: _, ...userWithoutPassword } = savedUser;
+
+    return { user: userWithoutPassword };
   }
 
   async findByEmail(email: string): Promise<User | null> {
