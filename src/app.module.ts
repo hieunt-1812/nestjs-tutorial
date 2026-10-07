@@ -9,6 +9,7 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { ProfilesModule } from './profiles/profiles.module';
 import { AttachmentsModule } from './attachments/attachments.module';
+import { ArticlesModule } from './articles/articles.module';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { AttachmentsModule } from './attachments/attachments.module';
     AuthModule,
     ProfilesModule,
     AttachmentsModule,
+    ArticlesModule,
   ],
   controllers: [AppController],
   providers: [AppService],
