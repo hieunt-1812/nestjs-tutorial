@@ -1,11 +1,11 @@
 import {
   Controller,
-  Post,
+  Put,
   Body,
-  HttpCode,
-  HttpStatus,
   Get,
   UseGuards,
+  UseInterceptors,
+  UploadedFile,
   Request,
 } from '@nestjs/common';
 import {
@@ -13,10 +13,14 @@ import {
   ApiResponse,
   ApiTags,
   ApiBearerAuth,
+  ApiConsumes,
+  ApiBody,
 } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { UsersService } from './users.service';
-import { CreateUserDto } from './dto/create-user.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
+import { avatarMulterOptions } from '../attachments/multer.config';
 
 @ApiTags('Users')
 @Controller()
@@ -34,5 +38,37 @@ export class UsersController {
   })
   getCurrentUser(@Request() req: any) {
     return { user: req.user };
+  }
+
+  @Put('user')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth()
+  @UseInterceptors(FileInterceptor('avatar', avatarMulterOptions))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({
+    summary: 'Cập nhật thông tin User (kèm upload avatar tùy chọn)',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        username: { type: 'string', example: 'johndoe' },
+        email: { type: 'string', example: 'john@example.com' },
+        password: { type: 'string', example: 'newpassword123' },
+        bio: { type: 'string', example: 'I work at Statefarm' },
+        image: { type: 'string', example: 'https://example.com/avatar.png' },
+        avatar: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @ApiResponse({ status: 200, description: 'Cập nhật user thành công.' })
+  @ApiResponse({ status: 401, description: 'Không có quyền truy cập.' })
+  @ApiResponse({ status: 409, description: 'Username hoặc Email đã tồn tại.' })
+  updateUser(
+    @Request() req: any,
+    @Body() updateUserDto: UpdateUserDto,
+    @UploadedFile() avatar?: Express.Multer.File,
+  ) {
+    return this.usersService.update(req.user.id, updateUserDto, avatar);
   }
 }
