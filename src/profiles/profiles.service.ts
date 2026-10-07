@@ -7,15 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Follow } from './entities/follow.entity';
 import { User } from '../users/entities/user.entity';
-
-export interface ProfileResponse {
-  profile: {
-    username: string;
-    bio: string;
-    image: string;
-    following: boolean;
-  };
-}
+import { ProfileResponse } from './interfaces/profile-response.interface';
 
 @Injectable()
 export class ProfilesService {
