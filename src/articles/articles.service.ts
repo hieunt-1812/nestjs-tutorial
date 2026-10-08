@@ -3,8 +3,8 @@ import {
   NotFoundException,
   ForbiddenException,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
+import { DataSource, EntityManager, In, Repository } from 'typeorm';
 import { Article } from './entities/article.entity';
 import { Tag } from './entities/tag.entity';
 import { ArticleFavorite } from './entities/article-favorite.entity';
@@ -14,21 +14,19 @@ import { CreateArticleDto } from './dto/create-article.dto';
 import { UpdateArticleDto } from './dto/update-article.dto';
 import { ListArticlesQueryDto } from './dto/list-articles-query.dto';
 import { FeedArticlesQueryDto } from './dto/feed-articles-query.dto';
+import { ArticlesFormatterService } from './articles-formatter.service';
 import {
-  ArticlesFormatterService,
-  ArticleView,
-} from './articles-formatter.service';
+  MultipleArticlesResponse,
+  SingleArticleResponse,
+} from './interfaces/article-view.interface';
+import { ARTICLE_RELATIONS } from './articles.constants';
 import { generateSlug } from './slug.util';
-
-const ARTICLE_RELATIONS = { author: true, tags: true };
 
 @Injectable()
 export class ArticlesService {
   constructor(
     @InjectRepository(Article)
     private readonly articlesRepository: Repository<Article>,
-    @InjectRepository(Tag)
-    private readonly tagsRepository: Repository<Tag>,
     @InjectRepository(ArticleFavorite)
     private readonly favoritesRepository: Repository<ArticleFavorite>,
     @InjectRepository(Follow)
@@ -36,37 +34,44 @@ export class ArticlesService {
     @InjectRepository(User)
     private readonly usersRepository: Repository<User>,
     private readonly formatter: ArticlesFormatterService,
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
   ) {}
 
   async create(
     dto: CreateArticleDto,
     authorId: string,
-  ): Promise<{ article: ArticleView }> {
-    const tags = await this.resolveTags(dto.tagList ?? []);
-    const article = this.articlesRepository.create({
-      slug: generateSlug(dto.title),
-      title: dto.title,
-      description: dto.description,
-      body: dto.body,
-      authorId,
-      tags,
+  ): Promise<SingleArticleResponse> {
+    const articleId = await this.dataSource.transaction(async (manager) => {
+      const tags = await this.resolveTags(manager, dto.tagList ?? []);
+      const article = manager.create(Article, {
+        slug: generateSlug(dto.title),
+        title: dto.title,
+        description: dto.description,
+        body: dto.body,
+        authorId,
+        tags,
+      });
+      const saved = await manager.save(article);
+      return saved.id;
     });
-    const saved = await this.articlesRepository.save(article);
-    return this.single(saved.id, authorId);
+    return this.single(articleId, authorId);
   }
 
   async findBySlug(
     slug: string,
     currentUserId?: string,
-  ): Promise<{ article: ArticleView }> {
+  ): Promise<SingleArticleResponse> {
     const article = await this.getEntityBySlug(slug);
-    return { article: await this.formatter.buildArticle(article, currentUserId) };
+    return {
+      article: await this.formatter.buildArticle(article, currentUserId),
+    };
   }
 
   async list(
     query: ListArticlesQueryDto,
     currentUserId?: string,
-  ): Promise<{ articles: ArticleView[]; articlesCount: number }> {
+  ): Promise<MultipleArticlesResponse> {
     const qb = this.articlesRepository
       .createQueryBuilder('article')
       .leftJoinAndSelect('article.author', 'author')
@@ -121,7 +126,7 @@ export class ArticlesService {
   async feed(
     query: FeedArticlesQueryDto,
     currentUserId: string,
-  ): Promise<{ articles: ArticleView[]; articlesCount: number }> {
+  ): Promise<MultipleArticlesResponse> {
     const following = await this.followsRepository.find({
       where: { followerId: currentUserId },
     });
@@ -150,50 +155,48 @@ export class ArticlesService {
     slug: string,
     dto: UpdateArticleDto,
     currentUserId: string,
-  ): Promise<{ article: ArticleView }> {
-    const article = await this.getEntityBySlug(slug);
-    this.assertAuthor(article, currentUserId);
+  ): Promise<SingleArticleResponse> {
+    const articleId = await this.dataSource.transaction(async (manager) => {
+      const article = await this.findForWrite(manager, slug, currentUserId);
 
-    if (dto.title !== undefined) {
-      article.title = dto.title;
-      article.slug = generateSlug(dto.title);
-    }
-    if (dto.description !== undefined) article.description = dto.description;
-    if (dto.body !== undefined) article.body = dto.body;
+      if (dto.title !== undefined) {
+        article.title = dto.title;
+        article.slug = generateSlug(dto.title);
+      }
+      if (dto.description !== undefined) article.description = dto.description;
+      if (dto.body !== undefined) article.body = dto.body;
 
-    await this.articlesRepository.save(article);
-    return this.single(article.id, currentUserId);
+      await manager.save(article);
+      return article.id;
+    });
+    return this.single(articleId, currentUserId);
   }
 
   async remove(slug: string, currentUserId: string): Promise<void> {
-    const article = await this.getEntityBySlug(slug);
-    this.assertAuthor(article, currentUserId);
-    await this.articlesRepository.remove(article);
+    await this.dataSource.transaction(async (manager) => {
+      const article = await this.findForWrite(manager, slug, currentUserId);
+      await manager.delete(Article, { id: article.id });
+    });
   }
 
   async favorite(
     slug: string,
     currentUserId: string,
-  ): Promise<{ article: ArticleView }> {
+  ): Promise<SingleArticleResponse> {
     const article = await this.getEntityBySlug(slug);
-    const existing = await this.favoritesRepository.findOne({
-      where: { articleId: article.id, userId: currentUserId },
-    });
-    if (!existing) {
-      await this.favoritesRepository.save(
-        this.favoritesRepository.create({
-          articleId: article.id,
-          userId: currentUserId,
-        }),
-      );
-    }
+    await this.favoritesRepository
+      .createQueryBuilder()
+      .insert()
+      .values({ articleId: article.id, userId: currentUserId })
+      .orIgnore()
+      .execute();
     return this.single(article.id, currentUserId);
   }
 
   async unfavorite(
     slug: string,
     currentUserId: string,
-  ): Promise<{ article: ArticleView }> {
+  ): Promise<SingleArticleResponse> {
     const article = await this.getEntityBySlug(slug);
     await this.favoritesRepository.delete({
       articleId: article.id,
@@ -205,7 +208,7 @@ export class ArticlesService {
   private async single(
     id: string,
     currentUserId?: string,
-  ): Promise<{ article: ArticleView }> {
+  ): Promise<SingleArticleResponse> {
     const article = await this.articlesRepository.findOne({
       where: { id },
       relations: ARTICLE_RELATIONS,
@@ -226,27 +229,43 @@ export class ArticlesService {
     return article;
   }
 
+  private async findForWrite(
+    manager: EntityManager,
+    slug: string,
+    currentUserId: string,
+  ): Promise<Article> {
+    const article = await manager.findOne(Article, {
+      where: { slug },
+      lock: { mode: 'pessimistic_write' },
+    });
+    if (!article) {
+      throw new NotFoundException('Không tìm thấy bài viết');
+    }
+    this.assertAuthor(article, currentUserId);
+    return article;
+  }
+
   private assertAuthor(article: Article, currentUserId: string): void {
     if (article.authorId !== currentUserId) {
       throw new ForbiddenException('Bạn không có quyền thao tác bài viết này');
     }
   }
 
-  private async resolveTags(names: string[]): Promise<Tag[]> {
+  private async resolveTags(
+    manager: EntityManager,
+    names: string[],
+  ): Promise<Tag[]> {
     const unique = [...new Set(names.map((n) => n.trim()).filter(Boolean))];
     if (unique.length === 0) return [];
 
-    const existing = await this.tagsRepository.find({
-      where: { name: In(unique) },
-    });
-    const existingNames = new Set(existing.map((t) => t.name));
-    const toCreate = unique
-      .filter((name) => !existingNames.has(name))
-      .map((name) => this.tagsRepository.create({ name }));
+    await manager
+      .createQueryBuilder()
+      .insert()
+      .into(Tag)
+      .values(unique.map((name) => ({ name })))
+      .orIgnore()
+      .execute();
 
-    const created = toCreate.length
-      ? await this.tagsRepository.save(toCreate)
-      : [];
-    return [...existing, ...created];
+    return manager.find(Tag, { where: { name: In(unique) } });
   }
 }

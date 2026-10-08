@@ -4,26 +4,7 @@ import { In, Repository } from 'typeorm';
 import { Article } from './entities/article.entity';
 import { ArticleFavorite } from './entities/article-favorite.entity';
 import { Follow } from '../profiles/entities/follow.entity';
-
-export interface AuthorView {
-  username: string;
-  bio: string;
-  image: string;
-  following: boolean;
-}
-
-export interface ArticleView {
-  slug: string;
-  title: string;
-  description: string;
-  body: string;
-  tagList: string[];
-  createdAt: Date;
-  updatedAt: Date;
-  favorited: boolean;
-  favoritesCount: number;
-  author: AuthorView;
-}
+import { ArticleView } from './interfaces/article-view.interface';
 
 @Injectable()
 export class ArticlesFormatterService {
@@ -38,8 +19,8 @@ export class ArticlesFormatterService {
     article: Article,
     currentUserId?: string,
   ): Promise<ArticleView> {
-    const [views] = await this.buildArticles([article], currentUserId);
-    return views;
+    const [view] = await this.buildArticles([article], currentUserId);
+    return view;
   }
 
   async buildArticles(
@@ -50,10 +31,11 @@ export class ArticlesFormatterService {
 
     const articleIds = articles.map((a) => a.id);
     const authorIds = [...new Set(articles.map((a) => a.authorId))];
-
-    const favoritesCountMap = await this.countFavorites(articleIds);
-    const favoritedSet = await this.favoritedByUser(articleIds, currentUserId);
-    const followingSet = await this.followingAuthors(authorIds, currentUserId);
+    const [favoritesCountMap, favoritedSet, followingSet] = await Promise.all([
+      this.countFavorites(articleIds),
+      this.favoritedByUser(articleIds, currentUserId),
+      this.followingAuthors(authorIds, currentUserId),
+    ]);
 
     return articles.map((article) => ({
       slug: article.slug,
