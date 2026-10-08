@@ -35,7 +35,7 @@ export class CommentsController {
   @ApiResponse({ status: 201, description: 'Tạo bình luận thành công.' })
   @ApiResponse({ status: 401, description: 'Không có quyền truy cập.' })
   @ApiResponse({ status: 404, description: 'Không tìm thấy bài viết.' })
-  create(
+  addCommentToArticle(
     @Param('slug') slug: string,
     @Body() dto: CreateCommentDto,
     @Request() req: any,
@@ -52,7 +52,7 @@ export class CommentsController {
   })
   @ApiResponse({ status: 200, description: 'Trả về danh sách bình luận.' })
   @ApiResponse({ status: 404, description: 'Không tìm thấy bài viết.' })
-  findAll(@Param('slug') slug: string, @Request() req: any) {
+  getCommentsFromArticle(@Param('slug') slug: string, @Request() req: any) {
     return this.commentsService.findByArticle(slug, req.user?.id);
   }
 
@@ -67,7 +67,7 @@ export class CommentsController {
   @ApiResponse({ status: 401, description: 'Không có quyền truy cập.' })
   @ApiResponse({ status: 403, description: 'Không phải tác giả bình luận.' })
   @ApiResponse({ status: 404, description: 'Không tìm thấy bình luận.' })
-  remove(
+  deleteComment(
     @Param('slug') slug: string,
     @Param('id') id: string,
     @Request() req: any,
