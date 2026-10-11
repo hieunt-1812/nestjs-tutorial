@@ -16,7 +16,7 @@ import { CommentsModule } from './comments/comments.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: process.env.NODE_ENV === 'test' ? '.env.test' : '.env',
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -29,7 +29,7 @@ import { CommentsModule } from './comments/comments.module';
         password: configService.get<string>('DB_PASSWORD'),
         database: configService.get<string>('DB_NAME'),
         autoLoadEntities: true,
-        synchronize: false,
+        synchronize: configService.get<string>('DB_SYNCHRONIZE') === 'true',
       }),
     }),
     I18nModule.forRoot({
