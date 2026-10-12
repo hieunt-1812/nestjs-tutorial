@@ -29,7 +29,11 @@ import { CommentsModule } from './comments/comments.module';
         password: configService.get<string>('DB_PASSWORD'),
         database: configService.get<string>('DB_NAME'),
         autoLoadEntities: true,
-        synchronize: configService.get<string>('DB_SYNCHRONIZE') === 'true',
+        synchronize: false,
+        ...(configService.get<string>('NODE_ENV') === 'test' && {
+          migrationsRun: true,
+          migrations: [path.join(__dirname, 'database/migrations/*.ts')],
+        }),
       }),
     }),
     I18nModule.forRoot({
