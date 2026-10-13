@@ -16,7 +16,7 @@ import { CommentsModule } from './comments/comments.module';
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
-      envFilePath: '.env',
+      envFilePath: process.env.NODE_ENV === 'test' ? '.env.test' : '.env',
     }),
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
@@ -30,6 +30,10 @@ import { CommentsModule } from './comments/comments.module';
         database: configService.get<string>('DB_NAME'),
         autoLoadEntities: true,
         synchronize: false,
+        ...(configService.get<string>('NODE_ENV') === 'test' && {
+          migrationsRun: true,
+          migrations: [path.join(__dirname, 'database/migrations/*.ts')],
+        }),
       }),
     }),
     I18nModule.forRoot({
